@@ -33,7 +33,10 @@ FROM debian:bookworm-slim AS electric-extractor
 RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 RUN curl -fsSL https://github.com/google/go-containerregistry/releases/download/v0.20.3/go-containerregistry_Linux_x86_64.tar.gz | tar xzf - -C /usr/local/bin/ crane
-RUN crane pull --platform linux/amd64 electricsql/electric:1.4.13 /opt/electric
+# crane pull --format=oci ensures proper OCI directory layout (index.json + blobs/)
+RUN crane pull --platform linux/amd64 --format=oci electricsql/electric:1.4.13 /opt/electric
+# Verify we got a proper OCI layout
+RUN test -f /opt/electric/index.json && echo "OCI layout OK" || (echo "FAIL: no index.json" && ls -la /opt/electric/)
 
 # ── Rust backend build ──────────────────────────────────────────────
 FROM rust:1.93-slim-bookworm AS builder
@@ -107,7 +110,8 @@ COPY --from=fe-builder /repo/packages/remote-web/dist /srv/static
 # Copy ElectricSQL from crane OCI extraction
 COPY --from=electric-extractor /opt/electric /app/electric-oci
 COPY crates/remote/extract-electric-jar.py /app/extract-electric-jar.py
-RUN python3 /app/extract-electric-jar.py && rm -rf /app/electric-oci /app/extract-electric-jar.py
+RUN python3 /app/extract-electric-jar.py && rm -rf /app/electric-oci /app/extract-electric-jar.py || \
+  (echo "=== OCI extraction failed, contents of electric-oci: ===" && ls -laR /app/electric-oci/ 2>/dev/null; exit 1)
 
 # Copy config files
 COPY crates/remote/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
