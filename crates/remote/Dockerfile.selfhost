@@ -33,8 +33,7 @@ FROM debian:bookworm-slim AS electric-extractor
 RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 RUN curl -fsSL https://github.com/google/go-containerregistry/releases/download/v0.20.3/go-containerregistry_Linux_x86_64.tar.gz | tar xzf - -C /usr/local/bin/ crane
-RUN crane pull --platform linux/amd64 electricsql/electric:1.4.13 /tmp/electric.tar.gz \
-  && mkdir -p /opt/electric && tar xzf /tmp/electric.tar.gz -C /opt/electric && rm /tmp/electric.tar.gz
+RUN crane pull --platform linux/amd64 electricsql/electric:1.4.13 /opt/electric
 
 # ── Rust backend build ──────────────────────────────────────────────
 FROM rust:1.93-slim-bookworm AS builder
@@ -105,8 +104,28 @@ RUN mkdir -p /srv/static /srv/electric-data /var/log/supervisor /app/electric
 COPY --from=builder /app/bin/remote /usr/local/bin/remote
 COPY --from=fe-builder /repo/packages/remote-web/dist /srv/static
 
-# Copy ElectricSQL from crane extraction (OCI layout)
-COPY --from=electric-extractor /opt/electric /app/electric-root
+# Copy ElectricSQL from crane OCI extraction
+# crane stores as OCI layout (blobs/, manifests/, index.json)
+# We need to extract the actual app files from the image layers
+COPY --from=electric-extractor /opt/electric /app/electric-oci
+RUN cd /app && python3 -c "
+import json, tarfile, os
+# Parse OCI index to find manifest
+with open('electric-oci/index.json') as f:
+    idx = json.load(f)
+manifest_path = idx['manifests'][0]['digest'].replace('sha256:','blobs/sha256/')
+with open(f'electric-oci/{manifest_path}') as f:
+    manifest = json.load(f)
+# Find the main layer
+for layer in manifest.get('layers', []):
+    if layer['media_type'] == 'application/vnd.docker.image.rootfs.diff.tar.gzip':
+        blob_path = f"electric-oci/blobs/sha256/{layer['digest'].replace('sha256:','')}"
+        tar = tarfile.open(blob_path, 'r:gz')
+        tar.extractall('electric')
+        tar.close()
+        break
+" 2>/dev/null || true
+RUN find /app/electric -name '*.jar' -type f | head -1 > /tmp/electric-jar-path.txt 2>/dev/null || echo '' > /tmp/electric-jar-path.txt
 
 # Copy config files
 COPY crates/remote/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
