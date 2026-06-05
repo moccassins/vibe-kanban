@@ -1,50 +1,57 @@
 # syntax=docker/dockerfile:1.6
 
-# All-in-one Vibe Kanban Cloud: remote-server + ElectricSQL
-# Downloads ElectricSQL JAR directly (no crane/OCI parsing needed)
-# Runs as single container with supervisor — no privileged mode needed
+# Self-hosted Vibe Kanban Remote Server
+# Based on upstream crates/remote/Dockerfile with ElectricSQL removed
+# ElectricSQL runs as a separate container if needed
 
-ARG VITE_RELAY_API_BASE_URL=""
+ARG APP_NAME=remote
 
 # ── Frontend build ──────────────────────────────────────────────────
 FROM node:20-alpine AS fe-builder
-ARG VITE_RELAY_API_BASE_URL
+
+ARG VITE_RELAY_API_BASE_URL=""
+ARG VITE_PUBLIC_REACT_VIRTUOSO_LICENSE_KEY=""
+
 WORKDIR /repo
 ENV VITE_RELAY_API_BASE_URL=${VITE_RELAY_API_BASE_URL}
+ENV VITE_PUBLIC_REACT_VIRTUOSO_LICENSE_KEY=${VITE_PUBLIC_REACT_VIRTUOSO_LICENSE_KEY}
+
 RUN corepack enable
+
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY packages/local-web/package.json packages/local-web/package.json
 COPY packages/remote-web/package.json packages/remote-web/package.json
 COPY packages/ui/package.json packages/ui/package.json
 COPY packages/web-core/package.json packages/web-core/package.json
 COPY patches/ patches/
+
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
     pnpm install --frozen-lockfile
+
 COPY packages/remote-web/ packages/remote-web/
 COPY packages/local-web/tailwind.new.config.js packages/local-web/tailwind.new.config.js
 COPY packages/public/ packages/public/
 COPY packages/ui/ packages/ui/
 COPY packages/web-core/ packages/web-core/
 COPY shared/ shared/
+
 RUN pnpm -C packages/remote-web build
-
-# ── Download ElectricSQL JAR via skopeo ─────────────────────────────
-FROM quay.io/skopeo/stable:latest AS electric-extractor
-
-# Use skopeo to copy from Docker Hub and extract layers
-RUN mkdir -p /tmp/electric-oci
-RUN skopeo copy docker://electricsql/electric:1.4.13 dir:/tmp/electric-oci
-
-# Parse OCI layout and extract the JAR from layers
-COPY crates/remote/extract-electric-oci.py /tmp/extract-electric-oci.py
-RUN python3 /tmp/extract-electric-oci.py
 
 # ── Rust backend build ──────────────────────────────────────────────
 FROM rust:1.93-slim-bookworm AS builder
 
+ARG APP_NAME
+ARG FEATURES=""
+ARG POSTHOG_API_KEY=""
+ARG POSTHOG_API_ENDPOINT=""
+ARG SENTRY_DSN_REMOTE=""
+
 ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
 ENV CARGO_NET_GIT_FETCH_WITH_CLI=true
 ENV CARGO_TARGET_DIR=/app/target
+ENV POSTHOG_API_KEY=${POSTHOG_API_KEY}
+ENV POSTHOG_API_ENDPOINT=${POSTHOG_API_ENDPOINT}
+ENV SENTRY_DSN_REMOTE=${SENTRY_DSN_REMOTE}
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends pkg-config libssl-dev ca-certificates git openssh-client \
@@ -54,6 +61,7 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
+
 COPY rust-toolchain.toml ./
 RUN cargo --version >/dev/null
 COPY Cargo.toml Cargo.lock ./
@@ -78,6 +86,9 @@ COPY crates/remote crates/remote
 COPY crates/utils crates/utils
 COPY assets assets
 
+RUN mkdir -p /app/bin
+
+# Strip private billing dependency for self-hosted builds
 RUN if [ -z "${FEATURES}" ]; then \
       sed -i '/^billing = {.*vibe-kanban-private.*/d' crates/remote/Cargo.toml; \
       sed -i '/^# private crate for billing/d' crates/remote/Cargo.toml; \
@@ -85,48 +96,35 @@ RUN if [ -z "${FEATURES}" ]; then \
       rm -f crates/remote/Cargo.lock; \
     fi
 
-RUN mkdir -p /app/bin
 RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry \
     --mount=type=cache,id=cargo-git,target=/usr/local/cargo/git \
     --mount=type=cache,id=remote-target,target=/app/target \
     cargo build --release --manifest-path crates/remote/Cargo.toml \
- && cp /app/target/release/remote /app/bin/remote
+ && cp /app/target/release/${APP_NAME} /app/bin/${APP_NAME}
 
 # ── Runtime ────────────────────────────────────────────────────────
 FROM debian:bookworm-slim AS runtime
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates libssl3 wget curl \
-    default-jre-headless \
-    supervisor \
-    postgresql-client \
-  && rm -rf /var/lib/apt/lists/*
+ARG APP_NAME
 
-RUN mkdir -p /srv/static /srv/electric-data /var/log/supervisor /app/electric
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates libssl3 wget git \
+  && rm -rf /var/lib/apt/lists/* \
+  && useradd --system --create-home --uid 10001 appuser
 
-# Copy built artifacts
-COPY --from=builder /app/bin/remote /usr/local/bin/remote
+WORKDIR /srv
+
+COPY --from=builder /app/bin/${APP_NAME} /usr/local/bin/${APP_NAME}
 COPY --from=fe-builder /repo/packages/remote-web/dist /srv/static
 
-# Copy pre-extracted ElectricSQL JAR
-COPY --from=electric-extractor /opt/electric/electric.jar /app/electric/electric.jar
-RUN echo "/app/electric/electric.jar" > /tmp/electric-jar-path.txt
-# Copy extract script for reference (unused at runtime but keeps supervisord happy)
-COPY crates/remote/extract-electric-jar.py /app/extract-electric-jar.py
-
-# Copy config files
-COPY crates/remote/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
-COPY crates/remote/docker-entrypoint.sh /docker-entrypoint.sh
-COPY crates/remote/create-electric-role.sh /usr/local/bin/create-electric-role.sh
-RUN chmod +x /docker-entrypoint.sh /usr/local/bin/create-electric-role.sh
+USER appuser
 
 ENV SERVER_LISTEN_ADDR=0.0.0.0:8081 \
-    RUST_LOG=info,remote=info \
-    ELECTRIC_PORT=3000
+    RUST_LOG=info
 
 EXPOSE 8081
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD ["wget","--spider","-q","http://127.0.0.1:8081/v1/health"]
 
-ENTRYPOINT ["/docker-entrypoint.sh"]
+ENTRYPOINT ["/usr/local/bin/remote"]
