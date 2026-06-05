@@ -29,9 +29,13 @@ COPY shared/ shared/
 RUN pnpm -C packages/remote-web build
 
 # ── Download ElectricSQL from Docker image via crane ─────────────────
-FROM gcr.io/go-containerregistry/crane:v0.20.3 AS electric-extractor
-RUN crane pull --platform linux/amd64 electricsql/electric:1.4.13 /tmp/electric.tar.gz
-RUN mkdir -p /opt/electric && tar xzf /tmp/electric.tar.gz -C /opt/electric && rm /tmp/electric.tar.gz
+FROM debian:bookworm-slim AS electric-extractor
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+RUN curl -fsSL https://github.com/nicholasgasior/go-containerregistry/releases/download/v0.20.3/crane-v0.20.3-linux-x86_64 -o /usr/local/bin/crane \
+  && chmod +x /usr/local/bin/crane
+RUN crane pull --platform linux/amd64 electricsql/electric:1.4.13 /tmp/electric.tar.gz \
+  && mkdir -p /opt/electric && tar xzf /tmp/electric.tar.gz -C /opt/electric && rm /tmp/electric.tar.gz
 
 # ── Rust backend build ──────────────────────────────────────────────
 FROM rust:1.93-slim-bookworm AS builder
