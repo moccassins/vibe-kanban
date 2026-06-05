@@ -32,8 +32,8 @@ RUN pnpm -C packages/remote-web build
 FROM debian:bookworm-slim AS electric-extractor
 RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
   && rm -rf /var/lib/apt/lists/*
-RUN curl -fsSL https://github.com/nicholasgasior/go-containerregistry/releases/download/v0.20.3/crane-v0.20.3-linux-x86_64 -o /usr/local/bin/crane \
-  && chmod +x /usr/local/bin/crane
+RUN curl -fsSL https://github.com/google/go-containerregistry/releases/download/v0.20.3/go-containerregistry_Linux_x86_64.tar.gz -o /tmp/gcr.tar.gz \\
+  && tar xzf /tmp/gcr.tar.gz -C /usr/local/bin/ crane && rm /tmp/gcr.tar.gz
 RUN crane pull --platform linux/amd64 electricsql/electric:1.4.13 /tmp/electric.tar.gz \
   && mkdir -p /opt/electric && tar xzf /tmp/electric.tar.gz -C /opt/electric && rm /tmp/electric.tar.gz
 
