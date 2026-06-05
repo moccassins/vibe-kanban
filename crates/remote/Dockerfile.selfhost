@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.6
 
-# All-in-one Vibe Kanban Cloud: remote-server + ElectricSQL + Postgres client
-# Designed for single-container deployment with external Postgres
+# All-in-one Vibe Kanban Cloud: remote-server + ElectricSQL
+# No docker-in-docker — ElectricSQL runs as native Java process
 
 ARG VITE_RELAY_API_BASE_URL=""
 
@@ -26,6 +26,18 @@ COPY packages/ui/ packages/ui/
 COPY packages/web-core/ packages/web-core/
 COPY shared/ shared/
 RUN pnpm -C packages/remote-web build
+
+# ── Extract ElectricSQL from official Docker image ──────────────────
+FROM debian:bookworm-slim AS electric-extractor
+RUN apt-get update && apt-get install -y --no-install-recommends docker.io \
+  && rm -rf /var/lib/apt/lists/*
+
+RUN mkdir -p /opt/electric
+# Pull and extract ElectricSQL from the official image
+RUN docker pull electricsql/electric:1.4.13 \
+ && docker create --name electric-tmp electricsql/electric:1.4.13 \
+ && docker cp electric-tmp:/app /opt/electric/app \
+ && docker rm electric-tmp
 
 # ── Rust backend build ──────────────────────────────────────────────
 FROM rust:1.93-slim-bookworm AS builder
@@ -66,7 +78,6 @@ COPY crates/remote crates/remote
 COPY crates/utils crates/utils
 COPY assets assets
 
-# Strip private billing dependency for self-hosted builds
 RUN if [ -z "${FEATURES}" ]; then \
       sed -i '/^billing = {.*vibe-kanban-private.*/d' crates/remote/Cargo.toml; \
       sed -i '/^# private crate for billing/d' crates/remote/Cargo.toml; \
@@ -84,18 +95,22 @@ RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry \
 # ── Runtime ────────────────────────────────────────────────────────
 FROM debian:bookworm-slim AS runtime
 
+# Install Java (for ElectricSQL) + supervisor + postgresql-client
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates libssl3 wget git curl unzip \
-    docker.io \
+    ca-certificates libssl3 wget curl \
+    default-jre-headless \
     supervisor \
     postgresql-client \
   && rm -rf /var/lib/apt/lists/*
 
-RUN mkdir -p /srv/static /srv/electric-data /var/log/supervisor /run/docker.sock
+RUN mkdir -p /srv/static /srv/electric-data /var/log/supervisor /app/electric
 
 # Copy built artifacts
 COPY --from=builder /app/bin/remote /usr/local/bin/remote
 COPY --from=fe-builder /repo/packages/remote-web/dist /srv/static
+
+# Copy ElectricSQL app from Docker image extraction
+COPY --from=electric-extractor /opt/electric/app /app/electric
 
 # Copy config files
 COPY crates/remote/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
