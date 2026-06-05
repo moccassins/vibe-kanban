@@ -35,7 +35,7 @@ if [ ! -f "$ENV_FILE" ]; then
     echo "First run: Generating secure secrets in /data/.env..."
     touch "$ENV_FILE"
     echo "DB_PASSWORD=$(openssl rand -hex 32)" >> "$ENV_FILE"
-    echo "DB_NAME=vibekanban" >> "$ENV_FILE"
+    echo "DB_NAME=remote" >> "$ENV_FILE"
     echo "DB_USER=vibekanban" >> "$ENV_FILE"
     echo "VIBEKANBAN_REMOTE_JWT_SECRET=$(openssl rand -hex 32)" >> "$ENV_FILE"
     echo "ELECTRIC_ROLE_PASSWORD=$(openssl rand -hex 32)" >> "$ENV_FILE"

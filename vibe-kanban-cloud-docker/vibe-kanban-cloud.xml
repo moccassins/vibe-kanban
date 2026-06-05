@@ -1,55 +1,52 @@
 <?xml version="1.0"?>
 <Container version="2">
-  <Name>vibe-kanban-cloud</Name>
-  <Beta>false</Beta>
-  <Category>Productivity:Tools:AI:</Category>
-  <Repository>ghcr.io/moccassins/vibe-kanban-cloud-docker:latest</Repository>
-  <Registry>https://github.com/moccassins/vibe-kanban/pkgs/container/vibe-kanban-cloud-docker</Registry>
-  <Network>bridge</Network>
-  <Privileged>true</Privileged>
-  <ExtraParams>--hostname=vibe-kanban-cloud</ExtraParams>
-  <Shell>bash</Shell>
-  <GitHub>https://github.com/moccassins/vibe-kanban</GitHub>
-  <Project>https://vibekanban.com</Project>
-  <Overview>Vibe Kanban Cloud (moccassins fork) — Self-hosted remote server with ElectricSQL sync. Runs as Docker-in-Docker container orchestrating: remote-server, Postgres 16, ElectricSQL 1.4.13. Requires Privileged mode for internal Docker daemon. First run auto-generates secrets in /data/.env.&#13;&#13;&#13;Access web UI at http://[IP]:8081</Overview>
-  <WebUI>http://[IP]:[PORT:8081]</WebUI>
-  <TemplateURL></TemplateURL>
-  <Icon></Icon>
-  <Date>2026-06-05</Date>
-  <Changes></Changes>
-  <Requires>This container requires Privileged mode and persistent storage for database, secrets, and ElectricSQL data.</Requires>
+    <Name>vibe-kanban-cloud</Name>
+    <Beta>false</Beta>
+    <Category>Productivity: Tools:</Category>
+    <Repository>ghcr.io/moccassins/vibe-kanban-cloud-docker:latest</Repository>
+    <Registry>https://github.com/moccassins/vibe-kanban/pkgs/container/vibe-kanban-cloud-docker</Registry>
+    <Network>bridge</Network>
+    <ExtraParams>--hostname=vibe-kanban-cloud</ExtraParams>
+    <Shell>bash</Shell>
+    <Privileged>true</Privileged>
+    <GitHub>https://github.com/moccassins/vibe-kanban</GitHub>
+    <Project>https://vibekanban.com</Project>
+    <Overview>Vibe Kanban Cloud (moccassins fork) — self-hosted remote server with ElectricSQL sync, Forgejo support. Docker-in-Docker wrapper running the full stack (remote-server, Postgres 16, ElectricSQL 1.4.13, Caddy).&#13;&#13;Important: You MUST use Privileged mode.&#13;&#13;For Local setups without domain, enter your local IP in DOMAIN and it will auto-generate an SSL cert you can find in your appdata.&#13;&#13;For External proxies (Nginx/Traefik), set USE_EXTERNAL_PROXY to true and map the External App Port.</Overview>
+    <WebUI>http://[IP]:[PORT:180]/</WebUI>
+    <TemplateURL></TemplateURL>
+    <Icon>https://raw.githubusercontent.com/rorar/unraid-templates/main/templates/docker_icons/vibe-kanban-logo.png</Icon>
+    <Date>2026-06-05</Date>
+    <Changes></Changes>
+    <Requires>This container requires Privileged mode to run its internal Docker daemon (True Docker-in-Docker).</Requires>
 
-  <!-- Port Mapping -->
-  <Config Name="Port: Web UI" Target="8081" Default="8081" Mode="tcp" Description="HTTP port for the Vibe Kanban remote server web interface." Type="Port" Display="always" Required="true" Mask="false"/>
+    <!-- Port Mappings -->
+    <Config Name="Port: HTTP (Internal Proxy)" Target="80" Default="180" Mode="tcp" Description="Internal Caddy HTTP Port (used if USE_EXTERNAL_PROXY=false)." Type="Port" Display="always" Required="false" Mask="false"/>
+    <Config Name="Port: HTTPS (Internal Proxy)" Target="443" Default="1443" Mode="tcp" Description="Internal Caddy HTTPS Port (used if USE_EXTERNAL_PROXY=false)." Type="Port" Display="always" Required="false" Mask="false"/>
+    <Config Name="Port: External App (Direct)" Target="8081" Default="8081" Mode="tcp" Description="Direct access to Vibe Kanban App (used if USE_EXTERNAL_PROXY=true). Point your external reverse proxy to this port." Type="Port" Display="always" Required="false" Mask="false"/>
 
-  <!-- Volume Mapping -->
-  <Config Name="Path: App Data" Target="/data" Default="/mnt/user/appdata/vibe-kanban-cloud" Mode="rw" Description="Persistent storage for database, secrets (.env), and ElectricSQL data." Type="Path" Display="always" Required="true" Mask="false"/>
+    <!-- Volume Mappings -->
+    <Config Name="Path: Appdata Directory" Target="/data" Default="/mnt/user/appdata/vibe-kanban-cloud" Mode="rw" Description="Persistent storage for all data (database, electric, SSL certs, generated secrets in .env)." Type="Path" Display="always" Required="true" Mask="false"/>
 
-  <!-- Timezone -->
-  <Config Name="Variable: TZ" Target="TZ" Default="Europe/Berlin" Description="Timezone." Type="Variable" Display="always" Required="false" Mask="false"/>
+    <!-- Separator: Core Configuration -->
+    <Config Name="--- Core Configuration ---" Target="" Default="" Mode="" Description="Main server settings." Type="Variable" Display="always" Required="false" Mask="false"/>
+    <Config Name="Variable: Domain (IP or FQDN)" Target="DOMAIN" Default="100.126.75.120" Description="Your domain or local IP. If local IP, Caddy uses internal SSL." Type="Variable" Display="always" Required="true" Mask="false"/>
+    <Config Name="Variable: External Proxy Mode" Target="USE_EXTERNAL_PROXY" Default="false" Description="Set to 'true' if you use Nginx Proxy Manager, Traefik, or Cloudflare. Disables internal Caddy." Type="Variable" Display="always" Required="true" Mask="false"/>
+    <Config Name="Variable: TLS Email" Target="TLS_EMAIL" Default="" Description="(Optional) Email for Let's Encrypt if using a public domain with internal Caddy." Type="Variable" Display="advanced" Required="false" Mask="false"/>
 
-  <!-- Separator -->
-  <Config Name="--- Server Configuration ---" Target="" Default="" Mode="" Description="" Type="Variable" Display="always" Required="false" Mask="false"/>
-  <Config Name="Variable: DOMAIN" Target="DOMAIN" Default="" Description="Public domain for base URL (e.g. vibe.moccarr.uk). Leave empty for LAN-only." Type="Variable" Display="always" Required="false" Mask="false"/>
+    <!-- Separator: Local Authentication -->
+    <Config Name="--- Local Authentication ---" Target="" Default="" Mode="" Description="Bootstrap credentials for initial setup without OAuth." Type="Variable" Display="always" Required="false" Mask="false"/>
+    <Config Name="Variable: Local Admin Email" Target="SELF_HOST_LOCAL_AUTH_EMAIL" Default="daniel.groeger@outlook.com" Description="The email address for the bootstrap admin." Type="Variable" Display="always" Required="false" Mask="false"/>
+    <Config Name="Variable: Local Admin Password" Target="SELF_HOST_LOCAL_AUTH_PASSWORD" Default="" Description="Secure password for the bootstrap admin." Type="Variable" Display="always" Required="false" Mask="true"/>
 
-  <!-- Separator -->
-  <Config Name="--- Authentication ---" Target="" Default="" Description="Auto-generated on first run if left empty." Type="Variable" Display="always" Required="false" Mask="false"/>
-  <Config Name="Variable: SELF_HOST_LOCAL_AUTH_EMAIL" Target="SELF_HOST_LOCAL_AUTH_EMAIL" Default="" Description="Login email for local auth. Set on first run only." Type="Variable" Display="always" Required="false" Mask="false"/>
-  <Config Name="Variable: SELF_HOST_LOCAL_AUTH_PASSWORD" Target="SELF_HOST_LOCAL_AUTH_PASSWORD" Default="" Description="Login password for local auth. Set on first run only." Type="Variable" Display="always" Required="false" Mask="true"/>
+    <!-- Separator: OAuth Providers (Advanced) -->
+    <Config Name="--- OAuth Providers (Advanced) ---" Target="" Default="" Mode="" Description="Configure GitHub or Google login." Type="Variable" Display="advanced" Required="false" Mask="false"/>
+    <Config Name="Variable: GitHub OAuth Client ID" Target="GITHUB_OAUTH_CLIENT_ID" Default="" Description="Client ID for GitHub Auth." Type="Variable" Display="advanced" Required="false" Mask="false"/>
+    <Config Name="Variable: GitHub OAuth Client Secret" Target="GITHUB_OAUTH_CLIENT_SECRET" Default="" Description="Client Secret for GitHub Auth." Type="Variable" Display="advanced" Required="false" Mask="true"/>
+    <Config Name="Variable: Google OAuth Client ID" Target="GOOGLE_OAUTH_CLIENT_ID" Default="" Description="Client ID for Google Auth." Type="Variable" Display="advanced" Required="false" Mask="false"/>
+    <Config Name="Variable: Google OAuth Client Secret" Target="GOOGLE_OAUTH_CLIENT_SECRET" Default="" Description="Client Secret for Google Auth." Type="Variable" Display="advanced" Required="false" Mask="true"/>
 
-  <!-- Separator -->
-  <Config Name="--- GitHub OAuth (Optional) ---" Target="" Default="" Description="Connect GitHub for repo access." Type="Variable" Display="advanced" Required="false" Mask="false"/>
-  <Config Name="Variable: GITHUB_OAUTH_CLIENT_ID" Target="GITHUB_OAUTH_CLIENT_ID" Default="" Description="GitHub OAuth App Client ID." Type="Variable" Display="advanced" Required="false" Mask="false"/>
-  <Config Name="Variable: GITHUB_OAUTH_CLIENT_SECRET" Target="GITHUB_OAUTH_CLIENT_SECRET" Default="" Description="GitHub OAuth App Client Secret." Type="Variable" Display="advanced" Required="false" Mask="true"/>
-
-  <!-- Separator -->
-  <Config Name="--- Google OAuth (Optional) ---" Target="" Default="" Description="Connect Google for repo access." Type="Variable" Display="advanced" Required="false" Mask="false"/>
-  <Config Name="Variable: GOOGLE_OAUTH_CLIENT_ID" Target="GOOGLE_OAUTH_CLIENT_ID" Default="" Description="Google OAuth Client ID." Type="Variable" Display="advanced" Required="false" Mask="false"/>
-  <Config Name="Variable: GOOGLE_OAUTH_CLIENT_SECRET" Target="GOOGLE_OAUTH_CLIENT_SECRET" Default="" Description="Google OAuth Client Secret." Type="Variable" Display="advanced" Required="false" Mask="true"/>
-
-  <!-- Separator -->
-  <Config Name="--- Advanced ---" Target="" Default="" Description="Override defaults. Usually not needed." Type="Variable" Display="advanced" Required="false" Mask="false"/>
-  <Config Name="Variable: PUID" Target="PUID" Default="99" Description="UID for /data ownership." Type="Variable" Display="advanced" Required="false" Mask="false"/>
-  <Config Name="Variable: PGID" Target="PGID" Default="100" Description="GID for /data ownership." Type="Variable" Display="advanced" Required="false" Mask="false"/>
-  <Config Name="Variable: RUST_LOG" Target="RUST_LOG" Default="info,remote=info" Description="Rust log level." Type="Variable" Display="advanced" Required="false" Mask="false"/>
+    <!-- Separator: User & Permissions (Advanced) -->
+    <Config Name="--- User &amp; Permissions (Advanced) ---" Target="" Default="" Mode="" Description="Advanced user and permission settings." Type="Variable" Display="advanced" Required="false" Mask="false"/>
+    <Config Name="Variable: PUID" Target="PUID" Default="99" Description="Container User ID for file ownership in /data." Type="Variable" Display="advanced" Required="false" Mask="false"/>
+    <Config Name="Variable: PGID" Target="PGID" Default="100" Description="Container Group ID for file ownership in /data." Type="Variable" Display="advanced" Required="false" Mask="false"/>
 </Container>
