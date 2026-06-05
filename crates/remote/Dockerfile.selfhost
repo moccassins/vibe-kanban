@@ -105,27 +105,9 @@ COPY --from=builder /app/bin/remote /usr/local/bin/remote
 COPY --from=fe-builder /repo/packages/remote-web/dist /srv/static
 
 # Copy ElectricSQL from crane OCI extraction
-# crane stores as OCI layout (blobs/, manifests/, index.json)
-# We need to extract the actual app files from the image layers
 COPY --from=electric-extractor /opt/electric /app/electric-oci
-RUN cd /app && python3 -c "
-import json, tarfile, os
-# Parse OCI index to find manifest
-with open('electric-oci/index.json') as f:
-    idx = json.load(f)
-manifest_path = idx['manifests'][0]['digest'].replace('sha256:','blobs/sha256/')
-with open(f'electric-oci/{manifest_path}') as f:
-    manifest = json.load(f)
-# Find the main layer
-for layer in manifest.get('layers', []):
-    if layer['media_type'] == 'application/vnd.docker.image.rootfs.diff.tar.gzip':
-        blob_path = f"electric-oci/blobs/sha256/{layer['digest'].replace('sha256:','')}"
-        tar = tarfile.open(blob_path, 'r:gz')
-        tar.extractall('electric')
-        tar.close()
-        break
-" 2>/dev/null || true
-RUN find /app/electric -name '*.jar' -type f | head -1 > /tmp/electric-jar-path.txt 2>/dev/null || echo '' > /tmp/electric-jar-path.txt
+COPY crates/remote/extract-electric-jar.py /app/extract-electric-jar.py
+RUN python3 /app/extract-electric-jar.py && rm -rf /app/electric-oci /app/extract-electric-jar.py
 
 # Copy config files
 COPY crates/remote/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
