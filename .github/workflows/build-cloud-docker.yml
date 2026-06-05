@@ -6,6 +6,12 @@ on:
     paths:
       - 'vibe-kanban-cloud-docker/**'
   workflow_dispatch:
+    inputs:
+      force_rebuild:
+        description: 'Disable cache (force full rebuild)'
+        required: false
+        default: 'false'
+        type: boolean
 
 env:
   REGISTRY: ghcr.io

@@ -1,0 +1,55 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>vibe-kanban-cloud</Name>
+  <Beta>false</Beta>
+  <Category>Productivity:Tools:AI:</Category>
+  <Repository>ghcr.io/moccassins/vibe-kanban-cloud-docker:latest</Repository>
+  <Registry>https://github.com/moccassins/vibe-kanban/pkgs/container/vibe-kanban-cloud-docker</Registry>
+  <Network>bridge</Network>
+  <Privileged>true</Privileged>
+  <ExtraParams>--hostname=vibe-kanban-cloud</ExtraParams>
+  <Shell>bash</Shell>
+  <GitHub>https://github.com/moccassins/vibe-kanban</GitHub>
+  <Project>https://vibekanban.com</Project>
+  <Overview>Vibe Kanban Cloud (moccassins fork) — Self-hosted remote server with ElectricSQL sync. Runs as Docker-in-Docker container orchestrating: remote-server, Postgres 16, ElectricSQL 1.4.13. Requires Privileged mode for internal Docker daemon. First run auto-generates secrets in /data/.env.&#13;&#13;&#13;Access web UI at http://[IP]:8081</Overview>
+  <WebUI>http://[IP]:[PORT:8081]</WebUI>
+  <TemplateURL></TemplateURL>
+  <Icon></Icon>
+  <Date>2026-06-05</Date>
+  <Changes></Changes>
+  <Requires>This container requires Privileged mode and persistent storage for database, secrets, and ElectricSQL data.</Requires>
+
+  <!-- Port Mapping -->
+  <Config Name="Port: Web UI" Target="8081" Default="8081" Mode="tcp" Description="HTTP port for the Vibe Kanban remote server web interface." Type="Port" Display="always" Required="true" Mask="false"/>
+
+  <!-- Volume Mapping -->
+  <Config Name="Path: App Data" Target="/data" Default="/mnt/user/appdata/vibe-kanban-cloud" Mode="rw" Description="Persistent storage for database, secrets (.env), and ElectricSQL data." Type="Path" Display="always" Required="true" Mask="false"/>
+
+  <!-- Timezone -->
+  <Config Name="Variable: TZ" Target="TZ" Default="Europe/Berlin" Description="Timezone." Type="Variable" Display="always" Required="false" Mask="false"/>
+
+  <!-- Separator -->
+  <Config Name="--- Server Configuration ---" Target="" Default="" Mode="" Description="" Type="Variable" Display="always" Required="false" Mask="false"/>
+  <Config Name="Variable: DOMAIN" Target="DOMAIN" Default="" Description="Public domain for base URL (e.g. vibe.moccarr.uk). Leave empty for LAN-only." Type="Variable" Display="always" Required="false" Mask="false"/>
+
+  <!-- Separator -->
+  <Config Name="--- Authentication ---" Target="" Default="" Description="Auto-generated on first run if left empty." Type="Variable" Display="always" Required="false" Mask="false"/>
+  <Config Name="Variable: SELF_HOST_LOCAL_AUTH_EMAIL" Target="SELF_HOST_LOCAL_AUTH_EMAIL" Default="" Description="Login email for local auth. Set on first run only." Type="Variable" Display="always" Required="false" Mask="false"/>
+  <Config Name="Variable: SELF_HOST_LOCAL_AUTH_PASSWORD" Target="SELF_HOST_LOCAL_AUTH_PASSWORD" Default="" Description="Login password for local auth. Set on first run only." Type="Variable" Display="always" Required="false" Mask="true"/>
+
+  <!-- Separator -->
+  <Config Name="--- GitHub OAuth (Optional) ---" Target="" Default="" Description="Connect GitHub for repo access." Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="Variable: GITHUB_OAUTH_CLIENT_ID" Target="GITHUB_OAUTH_CLIENT_ID" Default="" Description="GitHub OAuth App Client ID." Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="Variable: GITHUB_OAUTH_CLIENT_SECRET" Target="GITHUB_OAUTH_CLIENT_SECRET" Default="" Description="GitHub OAuth App Client Secret." Type="Variable" Display="advanced" Required="false" Mask="true"/>
+
+  <!-- Separator -->
+  <Config Name="--- Google OAuth (Optional) ---" Target="" Default="" Description="Connect Google for repo access." Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="Variable: GOOGLE_OAUTH_CLIENT_ID" Target="GOOGLE_OAUTH_CLIENT_ID" Default="" Description="Google OAuth Client ID." Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="Variable: GOOGLE_OAUTH_CLIENT_SECRET" Target="GOOGLE_OAUTH_CLIENT_SECRET" Default="" Description="Google OAuth Client Secret." Type="Variable" Display="advanced" Required="false" Mask="true"/>
+
+  <!-- Separator -->
+  <Config Name="--- Advanced ---" Target="" Default="" Description="Override defaults. Usually not needed." Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="Variable: PUID" Target="PUID" Default="99" Description="UID for /data ownership." Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="Variable: PGID" Target="PGID" Default="100" Description="GID for /data ownership." Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="Variable: RUST_LOG" Target="RUST_LOG" Default="info,remote=info" Description="Rust log level." Type="Variable" Display="advanced" Required="false" Mask="false"/>
+</Container>
