@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.6
 
 # All-in-one Vibe Kanban Cloud: remote-server + ElectricSQL
-# Extracts ElectricSQL from Docker image at build time (no docker-in-docker)
+# Downloads ElectricSQL JAR directly (no crane/OCI parsing needed)
 # Runs as single container with supervisor — no privileged mode needed
 
 ARG VITE_RELAY_API_BASE_URL=""
@@ -28,15 +28,66 @@ COPY packages/web-core/ packages/web-core/
 COPY shared/ shared/
 RUN pnpm -C packages/remote-web build
 
-# ── Download ElectricSQL from Docker image via crane ─────────────────
-FROM debian:bookworm-slim AS electric-extractor
-RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
-  && rm -rf /var/lib/apt/lists/*
-RUN curl -fsSL https://github.com/google/go-containerregistry/releases/download/v0.20.3/go-containerregistry_Linux_x86_64.tar.gz | tar xzf - -C /usr/local/bin/ crane
-# crane pull --format=oci ensures proper OCI directory layout (index.json + blobs/)
-RUN crane pull --platform linux/amd64 --format=oci electricsql/electric:1.4.13 /opt/electric
-# Verify we got a proper OCI layout
-RUN test -f /opt/electric/index.json && echo "OCI layout OK" || (echo "FAIL: no index.json" && ls -la /opt/electric/)
+# ── Download ElectricSQL JAR via skopeo ─────────────────────────────
+FROM quay.io/skopeo/stable:latest AS electric-extractor
+
+# Use skopeo to copy from Docker Hub and extract layers
+RUN mkdir -p /tmp/electric-oci
+RUN skopeo copy docker://electricsql/electric:1.4.13 dir:/tmp/electric-oci
+
+# Parse OCI layout and extract the JAR from layers
+RUN python3 -c "
+import json, tarfile, os, sys
+
+oci_dir = '/tmp/electric-oci'
+out_dir = '/tmp/electric-out'
+os.makedirs(out_dir, exist_ok=True)
+
+idx_path = os.path.join(oci_dir, 'index.json')
+with open(idx_path) as f:
+    idx = json.load(f)
+
+manifest_digest = idx['manifests'][0]['digest'].replace('sha256:', '')
+
+# skopeo stores manifests in blobs/
+manifest_path = os.path.join(oci_dir, 'blobs', 'sha256', manifest_digest)
+if not os.path.isfile(manifest_path):
+    manifest_path = os.path.join(oci_dir, manifest_digest)
+with open(manifest_path) as f:
+    manifest = json.load(f)
+
+for layer in manifest.get('layers', []):
+    mt = layer.get('media_type', '')
+    digest = layer.get('digest', '').replace('sha256:', '')
+    blob_path = os.path.join(oci_dir, 'blobs', 'sha256', digest)
+    if not os.path.isfile(blob_path):
+        blob_path = os.path.join(oci_dir, digest)
+    if not os.path.isfile(blob_path):
+        continue
+    mode = 'r:gz' if 'gzip' in mt or 'gz' in mt else 'r:'
+    with tarfile.open(blob_path, mode) as tar:
+        tar.extractall(out_dir)
+
+jar = None
+for root, dirs, files in os.walk(out_dir):
+    for f in files:
+        if f.endswith('.jar'):
+            jar = os.path.join(root, f)
+            break
+    if jar:
+        break
+
+if not jar:
+    print('ERROR: No JAR found')
+    sys.exit(1)
+
+import shutil
+os.makedirs('/opt/electric', exist_ok=True)
+shutil.copy2(jar, '/opt/electric/electric.jar')
+with open('/opt/electric/jar-path.txt', 'w') as f:
+    f.write('/opt/electric/electric.jar')
+print(f'JAR extracted to /opt/electric/electric.jar')
+"
 
 # ── Rust backend build ──────────────────────────────────────────────
 FROM rust:1.93-slim-bookworm AS builder
@@ -107,11 +158,9 @@ RUN mkdir -p /srv/static /srv/electric-data /var/log/supervisor /app/electric
 COPY --from=builder /app/bin/remote /usr/local/bin/remote
 COPY --from=fe-builder /repo/packages/remote-web/dist /srv/static
 
-# Copy ElectricSQL from crane OCI extraction
-COPY --from=electric-extractor /opt/electric /app/electric-oci
-COPY crates/remote/extract-electric-jar.py /app/extract-electric-jar.py
-RUN python3 /app/extract-electric-jar.py && rm -rf /app/electric-oci /app/extract-electric-jar.py || \
-  (echo "=== OCI extraction failed, contents of electric-oci: ===" && ls -laR /app/electric-oci/ 2>/dev/null; exit 1)
+# Copy pre-extracted ElectricSQL JAR
+COPY --from=electric-extractor /opt/electric/electric.jar /app/electric/electric.jar
+RUN echo "/app/electric/electric.jar" > /tmp/electric-jar-path.txt
 
 # Copy config files
 COPY crates/remote/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
