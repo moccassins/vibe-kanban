@@ -46,6 +46,11 @@ fi
 
 source "$ENV_FILE"
 
+# Copy secrets to /app/.env so docker compose picks them up via its built-in
+# .env file lookup. This is more reliable than shell env propagation in
+# some DinD environments.
+cp "$ENV_FILE" /app/.env
+
 export DOMAIN="${DOMAIN:-localhost}"
 export DB_PASSWORD DB_NAME DB_USER
 export VIBEKANBAN_REMOTE_JWT_SECRET
