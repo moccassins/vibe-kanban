@@ -52,6 +52,20 @@ if [ -z "$DB_PASSWORD" ] || [ -z "$DB_USER" ] || [ -z "$DB_NAME" ]; then
     exit 1
 fi
 
+
+# Generate Postgres init script with hardcoded ElectricSQL credentials
+mkdir -p /data/init-db
+cat > /data/init-db/01-init-electric.sql << 'INITEOF'
+-- Create ElectricSQL replication role
+CREATE USER electric_sync WITH REPLICATION LOGIN PASSWORD '$ELECT…WORD';
+-- Grant necessary permissions  
+GRANT ALL PRIVILEGES ON DATABASE remote TO electric_sync;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO electric_sync;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO electric_sync;
+GRANT ALL ON SCHEMA public TO electric_sync;
+INITEOF
+echo "Generated Postgres init script for ElectricSQL role."
+
 # Rewrite docker-compose.yml with all values hardcoded by bash.
 # This eliminates docker compose's ${} variable substitution entirely,
 # which is unreliable in Docker-in-Docker environments.
@@ -67,6 +81,7 @@ services:
       POSTGRES_PASSWORD: $DB_PASSWORD
     volumes:
       - /data/remote-db-data:/var/lib/postgresql/data
+      - /data/init-db:/docker-entrypoint-initdb.d
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $DB_USER -d $DB_NAME"]
       interval: 5s
