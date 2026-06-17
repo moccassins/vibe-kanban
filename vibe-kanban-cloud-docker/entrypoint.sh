@@ -58,23 +58,21 @@ fi
 # ElectricSQL needs superuser to manage publications. The remote-server
 # migration also creates this role but without superuser privileges.
 mkdir -p /data/init-db
-cat > /data/init-db/00-electric-role.sql << 'INITEOF'
+cat > /data/init-db/00-electric-role.sql << INITEOF
 DO \$\$
 BEGIN
-  IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'electric_sync') THEN
-    EXECUTE format('CREATE ROLE electric_sync WITH SUPERUSER LOGIN REPLICATION PASSWORD %L', '$ELECT…WORD');
-    GRANT ALL PRIVILEGES ON DATABASE remote TO electric_sync;
-    GRANT ALL ON SCHEMA public TO electric_sync;
-    ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO electric_sync;
-    ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO electric_sync;
-    RAISE NOTICE 'Created electric_sync role with SUPERUSER';
-  ELSE
-    RAISE NOTICE 'electric_sync role already exists, skipping';
-  END IF;
+  CREATE ROLE electric_sync WITH SUPERUSER LOGIN REPLICATION PASSWORD '$ELECT…WORD';
+EXCEPTION WHEN duplicate_object THEN
+  ALTER ROLE electric_sync WITH SUPERUSER;
 END
 \$\$;
+GRANT ALL PRIVILEGES ON DATABASE remote TO electric_sync;
+GRANT ALL ON SCHEMA public TO electric_sync;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO electric_sync;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO electric_sync;
 INITEOF
 echo "Generated Postgres init script for ElectricSQL role."
+chown "$PUID":"$PGID" /data/init-db/00-electric-role.sql
 # Rewrite docker-compose.yml with all values hardcoded by bash.
 # This eliminates docker compose's ${} variable substitution entirely,
 # which is unreliable in Docker-in-Docker environments.
