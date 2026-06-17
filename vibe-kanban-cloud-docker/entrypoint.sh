@@ -46,10 +46,85 @@ fi
 
 source "$ENV_FILE"
 
-# Copy secrets to /app/.env so docker compose picks them up via its built-in
-# .env file lookup. This is more reliable than shell env propagation in
-# some DinD environments.
-cp "$ENV_FILE" /app/.env
+# Validate secrets are loaded
+if [ -z "$DB_PASSWORD" ] || [ -z "$DB_USER" ] || [ -z "$DB_NAME" ]; then
+    echo "❌ FATAL: Missing database secrets after sourcing /data/.env"
+    exit 1
+fi
+
+# Rewrite docker-compose.yml with all values hardcoded by bash.
+# This eliminates docker compose's ${} variable substitution entirely,
+# which is unreliable in Docker-in-Docker environments.
+cat > /app/docker-compose.yml << COMPOSE_EOF
+services:
+  remote-db:
+    image: postgres:16-alpine
+    command: ["postgres", "-c", "wal_level=logical"]
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: $DB_NAME
+      POSTGRES_USER: $DB_USER
+      POSTGRES_PASSWORD: $DB_PASSWORD
+    volumes:
+      - /data/remote-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $DB_USER -d $DB_NAME"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  electric:
+    image: electricsql/electric:1.4.13
+    working_dir: /app
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://electric_sync:$ELECTRIC_ROLE_PASSWORD@remote-db:5432/$DB_NAME?sslmode=disable
+      PG_PROXY_PORT: 65432
+      LOGICAL_PUBLISHER_HOST: electric
+      AUTH_MODE: insecure
+      ELECTRIC_INSECURE: true
+      ELECTRIC_MANUAL_TABLE_PUBLISHING: true
+      ELECTRIC_USAGE_REPORTING: false
+      ELECTRIC_FEATURE_FLAGS: allow_subqueries,tagged_subqueries
+    volumes:
+      - /data/electric-data:/app/persistent
+    depends_on:
+      remote-db:
+        condition: service_healthy
+      remote-server:
+        condition: service_healthy
+
+  remote-server:
+    image: ghcr.io/moccassins/vibe-kanban-cloud:latest
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    depends_on:
+      remote-db:
+        condition: service_healthy
+    environment:
+      RUST_LOG: ${RUST_LOG:-info,remote=info}
+      SERVER_DATABASE_URL: postgres://$DB_USER:$DB_PASSWORD@remote-db:5432/$DB_NAME
+      SERVER_LISTEN_ADDR: 0.0.0.0:8081
+      ELECTRIC_URL: http://electric:3000
+      SERVER_PUBLIC_BASE_URL: https://${DOMAIN}
+      VIBEKANBAN_REMOTE_JWT_SECRET: $VIBEKANBAN_REMOTE_JWT_SECRET
+      ELECTRIC_ROLE_PASSWORD: $ELECTRIC_ROLE_PASSWORD
+      GITHUB_OAUTH_CLIENT_ID: ${GITHUB_OAUTH_CLIENT_ID:-}
+      GITHUB_OAUTH_CLIENT_SECRET: ${GITHUB_OAUTH_CLIENT_SECRET:-}
+      GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
+      GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET:-}
+      SELF_HOST_LOCAL_AUTH_EMAIL: ${SELF_HOST_LOCAL_AUTH_EMAIL:-}
+      SELF_HOST_LOCAL_AUTH_PASSWORD: ${SELF_HOST_LOCAL_AUTH_PASSWORD:-}
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8081/v1/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+COMPOSE_EOF
+echo "Generated docker-compose.yml with hardcoded database credentials."
 
 export DOMAIN="${DOMAIN:-localhost}"
 export DB_PASSWORD DB_NAME DB_USER
