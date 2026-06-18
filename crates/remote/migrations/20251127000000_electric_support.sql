@@ -1,9 +1,25 @@
-CREATE ROLE electric_sync WITH LOGIN REPLICATION;
+-- Idempotent role + publication creation so container restarts don't crash.
+-- On first run both objects are created; on subsequent runs the DO blocks are no-ops.
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'electric_sync') THEN
+        CREATE ROLE electric_sync WITH LOGIN REPLICATION;
+    END IF;
+END
+$$;
 
 GRANT CONNECT ON DATABASE remote TO electric_sync;
 GRANT USAGE ON SCHEMA public TO electric_sync;
 
-CREATE PUBLICATION electric_publication_default;
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_publication WHERE pubname = 'electric_publication_default'
+    ) THEN
+        CREATE PUBLICATION electric_publication_default;
+    END IF;
+END
+$$;
 
 CREATE OR REPLACE FUNCTION electric_sync_table(p_schema text, p_table text)
 RETURNS void
